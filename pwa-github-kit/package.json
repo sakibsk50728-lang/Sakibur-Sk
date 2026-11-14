@@ -1,0 +1,17 @@
+{
+  "name": "easystudio-pro",
+  "version": "1.0.0",
+  "description": "EasyStudio Pro - Dark Studio Passport & ID Photo Maker (300 DPI)",
+  "private": true,
+  "scripts": {
+    "prepare-web": "mkdir -p www && cp index.html manifest.json sw.js www/",
+    "android:sync": "npm run prepare-web && npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/core": "^6.1.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  }
+}

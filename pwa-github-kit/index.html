@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0EA5E9" />
+  <title>EasyStudio Pro — 300 DPI Studio Photo Maker</title>
+  <link rel="manifest" href="./manifest.json" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            studioBg: '#121417',
+            studioCard: '#1C2026',
+            studioElevated: '#232830',
+            studioAccent: '#0EA5E9',
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      background-color: #121417;
+      color: #F8FAFC;
+      -webkit-tap-highlight-color: transparent;
+    }
+    input[type="range"] {
+      accent-color: #0EA5E9;
+    }
+    @media print {
+      body * { visibility: hidden !important; }
+      #print-area, #print-area * { visibility: visible !important; }
+      #print-area {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        background: #ffffff;
+      }
+      .print-page-img {
+        width: 100%;
+        page-break-after: always;
+        display: block;
+      }
+    }
+  </style>
+</head>
+<body class="bg-studioBg text-slate-100 min-h-screen flex flex-col pb-24 select-none">
+
+  <!-- Sticky Studio Header -->
+  <header class="sticky top-0 z-30 bg-studioCard/95 backdrop-blur border-b border-slate-800 px-4 py-3">
+    <div class="max-w-3xl mx-auto flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-sky-500/20 border border-sky-500/50 flex items-center justify-center text-sky-400 font-bold text-sm">
+          ES
+        </div>
+        <div>
+          <h1 class="text-base font-bold leading-tight tracking-tight">EasyStudio Pro</h1>
+          <p class="text-[11px] font-mono text-sky-400" id="header-spec-badge">35×45 mm · 413×531 px · 300 DPI</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="cursor-pointer px-3 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs font-semibold transition active:scale-95">
+          Upload Photo
+          <input id="photo-upload" type="file" accept="image/*" class="hidden" />
+        </label>
+      </div>
+    </div>
+
+    <!-- Workspace Tabs -->
+    <div class="max-w-3xl mx-auto mt-3 grid grid-cols-2 gap-2">
+      <button id="tab-btn-editor" class="py-2 rounded-xl text-xs font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/60 transition">
+        Studio Editor
+      </button>
+      <button id="tab-btn-sheet" class="py-2 rounded-xl text-xs font-semibold bg-studioElevated text-slate-400 border border-slate-700 transition">
+        Print Sheet (<span id="queue-count-badge">0</span>)
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-3xl w-full mx-auto px-4 py-4 space-y-4">
+
+    <!-- STUDIO EDITOR VIEW -->
+    <section id="view-editor" class="space-y-4">
+      <!-- Live Photo Preview Stage -->
+      <div class="bg-[#0D0F12] border border-slate-800 rounded-2xl p-4 relative flex flex-col items-center">
+        <div class="w-full flex items-center justify-between mb-2 text-[11px] text-slate-400 font-mono">
+          <span id="preview-dim-label">35 × 45 mm</span>
+          <div class="flex gap-2">
+            <button id="btn-toggle-guide" class="px-2 py-1 rounded bg-studioElevated border border-slate-700 text-sky-400">Guide: ON</button>
+            <button id="btn-reset-frame" class="px-2 py-1 rounded bg-studioElevated border border-slate-700 text-slate-300">Reset</button>
+          </div>
+        </div>
+
+        <div class="relative flex items-center justify-center w-full h-64">
+          <canvas id="preview-canvas" class="max-h-60 max-w-full rounded border-2 border-sky-500/80 shadow-lg bg-white"></canvas>
+          <div id="ai-loading-overlay" class="hidden absolute inset-0 bg-studioBg/85 rounded-xl flex flex-col items-center justify-center gap-2 z-10">
+            <div class="w-8 h-8 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
+            <p class="text-xs font-medium text-sky-300" id="ai-loading-text">Removing background locally with AI…</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tool Sub-Tabs -->
+      <div class="flex gap-2 overflow-x-auto pb-1">
+        <button data-tool="dimensions" class="tool-tab-btn px-3.5 py-2 rounded-xl text-xs font-semibold bg-sky-500 text-white whitespace-nowrap">Size & Crop</button>
+        <button data-tool="background" class="tool-tab-btn px-3.5 py-2 rounded-xl text-xs font-semibold bg-studioCard border border-slate-700 text-slate-300 whitespace-nowrap">AI Backdrop</button>
+        <button data-tool="retouch" class="tool-tab-btn px-3.5 py-2 rounded-xl text-xs font-semibold bg-studioCard border border-slate-700 text-slate-300 whitespace-nowrap">Retouch</button>
+        <button data-tool="namestrip" class="tool-tab-btn px-3.5 py-2 rounded-xl text-xs font-semibold bg-studioCard border border-slate-700 text-slate-300 whitespace-nowrap">Name & Date</button>
+      </div>
+
+      <!-- Panel: Dimensions & Crop -->
+      <div id="panel-dimensions" class="tool-panel bg-studioCard border border-slate-800 rounded-2xl p-4 space-y-4">
+        <div class="grid grid-cols-3 gap-2">
+          <button data-preset="35,45" class="preset-btn py-2 px-2 rounded-xl border border-sky-500 bg-sky-500/15 text-left">
+            <div class="text-xs font-semibold text-white">Passport</div>
+            <div class="text-[11px] font-mono text-sky-400">35×45 mm</div>
+          </button>
+          <button data-preset="25,30" class="preset-btn py-2 px-2 rounded-xl border border-slate-700 bg-studioElevated text-left">
+            <div class="text-xs font-semibold text-white">Stamp</div>
+            <div class="text-[11px] font-mono text-slate-400">25×30 mm</div>
+          </button>
+          <button data-preset="51,51" class="preset-btn py-2 px-2 rounded-xl border border-slate-700 bg-studioElevated text-left">
+            <div class="text-xs font-semibold text-white">Visa</div>
+            <div class="text-[11px] font-mono text-slate-400">51×51 mm</div>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[11px] text-slate-400 mb-1">Width (mm)</label>
+            <input id="input-width-mm" type="number" min="10" max="200" step="0.5" value="35"
+              class="w-full px-3 py-2 rounded-xl bg-studioElevated border border-slate-700 text-sm font-mono text-white focus:outline-none focus:border-sky-500" />
+          </div>
+          <div>
+            <label class="block text-[11px] text-slate-400 mb-1">Height (mm)</label>
+            <input id="input-height-mm" type="number" min="10" max="280" step="0.5" value="45"
+              class="w-full px-3 py-2 rounded-xl bg-studioElevated border border-slate-700 text-sm font-mono text-white focus:outline-none focus:border-sky-500" />
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <div class="flex justify-between text-xs">
+            <span>Zoom</span><span id="val-zoom" class="font-mono text-sky-400">100%</span>
+          </div>
+          <input id="slider-zoom" type="range" min="50" max="200" value="100" class="w-full" />
+
+          <div class="flex justify-between text-xs">
+            <span>Horizontal Position</span><span id="val-panx" class="font-mono text-sky-400">0%</span>
+          </div>
+          <input id="slider-panx" type="range" min="-100" max="100" value="0" class="w-full" />
+
+          <div class="flex justify-between text-xs">
+            <span>Vertical Position</span><span id="val-pany" class="font-mono text-sky-400">0%</span>
+          </div>
+          <input id="slider-pany" type="range" min="-100" max="100" value="0" class="w-full" />
+        </div>
+      </div>
+
+      <!-- Panel: AI Background Removal -->
+      <div id="panel-background" class="tool-panel hidden bg-studioCard border border-slate-800 rounded-2xl p-4 space-y-4">
+        <button id="btn-remove-bg" class="w-full py-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-sm font-semibold transition active:scale-98">
+          ✨ AI Remove Background (100% In-Browser)
+        </button>
+        <div>
+          <p class="text-xs text-slate-400 mb-2.5">Background Color Swatches</p>
+          <div class="flex flex-wrap items-center gap-3">
+            <button data-bg="original" class="swatch-btn px-3 py-2 rounded-xl bg-studioElevated border-2 border-sky-500 text-xs font-medium">Original</button>
+            <button data-bg="#FFFFFF" title="Pure White" class="swatch-btn w-10 h-10 rounded-full bg-white border-2 border-slate-600"></button>
+            <button data-bg="#1D70B8" title="Studio Blue" class="swatch-btn w-10 h-10 rounded-full bg-[#1D70B8] border-2 border-slate-600"></button>
+            <button data-bg="#38BDF8" title="Sky Blue" class="swatch-btn w-10 h-10 rounded-full bg-[#38BDF8] border-2 border-slate-600"></button>
+            <button data-bg="#E2E8F0" title="Light Gray" class="swatch-btn w-10 h-10 rounded-full bg-[#E2E8F0] border-2 border-slate-600"></button>
+            <label class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-studioElevated border border-slate-700 text-xs cursor-pointer">
+              <span>Custom</span>
+              <input id="input-custom-bg" type="color" value="#0EA5E9" class="w-6 h-6 bg-transparent border-0 cursor-pointer" />
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel: Studio Retouch -->
+      <div id="panel-retouch" class="tool-panel hidden bg-studioCard border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div class="flex gap-2">
+          <button id="btn-auto-retouch" class="flex-1 py-2.5 rounded-xl border border-sky-500 text-sky-400 text-xs font-semibold hover:bg-sky-500/10">
+            Auto Studio Retouch
+          </button>
+          <button id="btn-reset-retouch" class="px-4 py-2.5 rounded-xl bg-studioElevated border border-slate-700 text-xs text-slate-300">
+            Reset
+          </button>
+        </div>
+
+        <div class="space-y-2 pt-1">
+          <div class="flex justify-between text-xs">
+            <span>Brightness</span><span id="val-brightness" class="font-mono text-sky-400">100%</span>
+          </div>
+          <input id="slider-brightness" type="range" min="60" max="140" value="100" class="w-full" />
+
+          <div class="flex justify-between text-xs">
+            <span>Contrast</span><span id="val-contrast" class="font-mono text-sky-400">100%</span>
+          </div>
+          <input id="slider-contrast" type="range" min="60" max="160" value="100" class="w-full" />
+
+          <div class="flex justify-between text-xs">
+            <span>Saturation</span><span id="val-saturation" class="font-mono text-sky-400">100%</span>
+          </div>
+          <input id="slider-saturation" type="range" min="0" max="180" value="100" class="w-full" />
+        </div>
+      </div>
+
+      <!-- Panel: Name & Date Strip -->
+      <div id="panel-namestrip" class="tool-panel hidden bg-studioCard border border-slate-800 rounded-2xl p-4 space-y-3">
+        <label class="flex items-center justify-between cursor-pointer">
+          <span class="text-sm font-medium">Enable Name & Date Strip</span>
+          <input id="toggle-namestrip" type="checkbox" class="w-5 h-5 accent-sky-500" />
+        </label>
+        <input id="input-person-name" type="text" placeholder="Full Name (e.g. RAHUL SHARMA)"
+          class="w-full px-3 py-2.5 rounded-xl bg-studioElevated border border-slate-700 text-sm text-white focus:outline-none focus:border-sky-500" />
+        <div class="flex gap-2">
+          <input id="input-photo-date" type="text" placeholder="Date (DD-MM-YYYY)"
+            class="flex-1 px-3 py-2.5 rounded-xl bg-studioElevated border border-slate-700 text-sm text-white focus:outline-none focus:border-sky-500" />
+          <button id="btn-today-date" class="px-3 py-2 rounded-xl bg-studioElevated border border-slate-700 text-xs text-sky-400 font-medium">
+            Today
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- PRINT SHEET VIEW -->
+    <section id="view-sheet" class="hidden space-y-4">
+      <div class="bg-studioCard border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div class="grid grid-cols-2 gap-2.5">
+          <button data-paper="4x6" class="paper-btn p-3 rounded-xl border border-sky-500 bg-sky-500/15 text-left">
+            <div class="text-xs font-semibold">4×6 inch</div>
+            <div class="text-[11px] font-mono text-sky-400">101.6 × 152.4 mm</div>
+          </button>
+          <button data-paper="a4" class="paper-btn p-3 rounded-xl border border-slate-700 bg-studioElevated text-left">
+            <div class="text-xs font-semibold">A4 Sheet</div>
+            <div class="text-[11px] font-mono text-slate-400">210 × 297 mm</div>
+          </button>
+        </div>
+
+        <div class="flex items-center justify-between bg-studioElevated border border-sky-500/30 rounded-xl p-3">
+          <div>
+            <div class="text-xs font-semibold text-sky-400">Smart Auto-Fit Calculator</div>
+            <div id="autofit-summary" class="text-xs font-mono text-slate-200">4 cols × 2 rows = 8 max/sheet</div>
+          </div>
+          <button id="btn-autofill" class="px-3 py-2 rounded-lg bg-sky-500 text-white text-xs font-semibold">
+            Auto-Fill
+          </button>
+        </div>
+      </div>
+
+      <!-- Sheet Preview -->
+      <div class="bg-[#0D0F12] border border-slate-800 rounded-2xl p-4 flex flex-col items-center gap-3">
+        <div class="w-full flex justify-between text-xs text-slate-400">
+          <span>300 DPI Sheet Preview</span>
+          <span class="font-mono">0.5px cut lines</span>
+        </div>
+        <div id="sheet-preview-container" class="w-full flex flex-col items-center gap-3"></div>
+      </div>
+
+      <!-- Multi-Customer Print Queue -->
+      <div class="bg-studioCard border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold">Bulk Print Queue</h2>
+          <button id="btn-clear-queue" class="text-xs text-rose-400 font-medium">Clear All</button>
+        </div>
+        <button id="btn-add-to-queue-inline" class="w-full py-2.5 rounded-xl border border-sky-500 text-sky-400 text-xs font-semibold">
+          + Add Current Edited Photo
+        </button>
+        <div id="queue-list" class="space-y-2"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Hidden Print Container -->
+  <div id="print-area" class="hidden"></div>
+
+  <!-- Sticky Bottom Action Bar -->
+  <footer class="fixed bottom-0 inset-x-0 z-30 bg-studioCard/95 backdrop-blur border-t border-slate-800 px-4 py-3">
+    <div id="footer-editor" class="max-w-3xl mx-auto grid grid-cols-2 gap-2.5">
+      <button id="btn-add-queue" class="py-3 rounded-xl border border-sky-500 text-sky-400 text-xs font-semibold">
+        + Add to Queue
+      </button>
+      <button id="btn-go-sheet" class="py-3 rounded-xl bg-sky-500 text-white text-xs font-semibold">
+        Print Sheet →
+      </button>
+    </div>
+    <div id="footer-sheet" class="hidden max-w-3xl mx-auto grid grid-cols-3 gap-2">
+      <button id="btn-export-pdf" class="py-3 rounded-xl bg-sky-500 text-white text-xs font-semibold">Export PDF</button>
+      <button id="btn-export-jpg" class="py-3 rounded-xl border border-sky-500 text-sky-400 text-xs font-semibold">Export JPG</button>
+      <button id="btn-print-now" class="py-3 rounded-xl border border-slate-600 text-slate-200 text-xs font-semibold">Print</button>
+    </div>
+  </footer>
+
+  <script type="module">
+    const DPI = 300;
+    const MM_PER_INCH = 25.4;
+    const mmToPx = (mm) => Math.max(1, Math.round((mm * DPI) / MM_PER_INCH));
+
+    const PAPERS = {
+      '4x6': { label: '4×6 inch', w: 101.6, h: 152.4 },
+      'a4': { label: 'A4', w: 210, h: 297 },
+    };
+
+    const state = {
+      sourceImg: null,
+      cutoutImg: null,
+      widthMm: 35,
+      heightMm: 45,
+      zoom: 100,
+      panX: 0,
+      panY: 0,
+      bgColor: 'original',
+      brightness: 100,
+      contrast: 100,
+      saturation: 100,
+      showGuide: true,
+      showNameStrip: false,
+      personName: '',
+      photoDate: '',
+      paper: '4x6',
+      queue: [],
+      sheetCanvases: [],
+    };
+
+    // Create default crisp placeholder studio portrait on first load
+    function createInitialPortrait() {
+      const c = document.createElement('canvas');
+      c.width = 600; c.height = 750;
+      const ctx = c.getContext('2d');
+      const grad = ctx.createLinearGradient(0, 0, 0, 750);
+      grad.addColorStop(0, '#CBD5E1'); grad.addColorStop(1, '#94A3B8');
+      ctx.fillStyle = grad; ctx.fillRect(0, 0, 600, 750);
+      ctx.fillStyle = '#1E293B';
+      ctx.beginPath(); ctx.ellipse(300, 730, 220, 180, 0, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = '#E2A884';
+      ctx.fillRect(255, 420, 90, 120);
+      ctx.beginPath(); ctx.ellipse(300, 300, 115, 145, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#0F172A';
+      ctx.beginPath(); ctx.ellipse(300, 200, 122, 80, 0, Math.PI, 0); ctx.fill();
+      const img = new Image();
+      img.onload = () => { state.sourceImg = img; renderPreview(); };
+      img.src = c.toDataURL('image/png');
+    }
+
+    function renderTileCanvas(targetW, targetH, includeGuide = false) {
+      const c = document.createElement('canvas');
+      c.width = targetW; c.height = targetH;
+      const ctx = c.getContext('2d');
+
+      const activeImg = (state.bgColor !== 'original' && state.cutoutImg) ? state.cutoutImg : state.sourceImg;
+      ctx.fillStyle = (state.bgColor !== 'original' && state.cutoutImg) ? state.bgColor : '#FFFFFF';
+      ctx.fillRect(0, 0, targetW, targetH);
+
+      const hasStrip = state.showNameStrip && (state.personName.trim() || state.photoDate.trim());
+      const stripH = hasStrip ? Math.round(targetH * 0.145) : 0;
+      const photoH = targetH - stripH;
+
+      if (activeImg) {
+        const baseScale = Math.max(targetW / activeImg.width, photoH / activeImg.height);
+        const scale = baseScale * (state.zoom / 100);
+        const drawW = activeImg.width * scale;
+        const drawH = activeImg.height * scale;
+        const dx = targetW / 2 + (state.panX / 100) * (targetW * 0.5) - drawW / 2;
+        const dy = photoH / 2 + (state.panY / 100) * (photoH * 0.5) - drawH / 2;
+
+        ctx.save();
+        ctx.beginPath(); ctx.rect(0, 0, targetW, photoH); ctx.clip();
+        ctx.filter = `brightness(${state.brightness}%) contrast(${state.contrast}%) saturate(${state.saturation}%)`;
+        ctx.drawImage(activeImg, dx, dy, drawW, drawH);
+        ctx.restore();
+      }
+
+      if (hasStrip) {
+        const topY = targetH - stripH;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, topY, targetW, stripH);
+        ctx.strokeStyle = '#CBD5E1'; ctx.lineWidth = Math.max(1, targetH * 0.002);
+        ctx.beginPath(); ctx.moveTo(0, topY); ctx.lineTo(targetW, topY); ctx.stroke();
+
+        ctx.fillStyle = '#0F172A'; ctx.textAlign = 'center';
+        const name = state.personName.trim().toUpperCase();
+        const dop = state.photoDate.trim() ? `DOP: ${state.photoDate.trim()}` : '';
+        if (name && dop) {
+          ctx.font = `bold ${Math.round(stripH * 0.36)}px sans-serif`;
+          ctx.fillText(name, targetW / 2, topY + stripH * 0.45, targetW * 0.9);
+          ctx.font = `${Math.round(stripH * 0.28)}px sans-serif`;
+          ctx.fillText(dop, targetW / 2, topY + stripH * 0.82, targetW * 0.9);
+        } else {
+          ctx.font = `bold ${Math.round(stripH * 0.4)}px sans-serif`;
+          ctx.fillText(name || dop, targetW / 2, topY + stripH * 0.62, targetW * 0.9);
+        }
+      }
+
+      if (includeGuide && state.showGuide) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+        ctx.lineWidth = 1.5; ctx.setLineDash([6, 5]);
+        ctx.beginPath(); ctx.moveTo(targetW / 2, 0); ctx.lineTo(targetW / 2, photoH); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, photoH * 0.42); ctx.lineTo(targetW, photoH * 0.42); ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(targetW / 2, photoH * 0.41, targetW * 0.23, photoH * 0.27, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+      return c;
+    }
+
+    function renderPreview() {
+      const canvas = document.getElementById('preview-canvas');
+      const pxW = mmToPx(state.widthMm);
+      const pxH = mmToPx(state.heightMm);
+      document.getElementById('header-spec-badge').textContent = `${state.widthMm}×${state.heightMm} mm · ${pxW}×${pxH} px · 300 DPI`;
+      document.getElementById('preview-dim-label').textContent = `${state.widthMm} × ${state.heightMm} mm`;
+
+      const maxPreview = 360;
+      const ratio = state.widthMm / state.heightMm;
+      const w = ratio >= 1 ? maxPreview : Math.round(maxPreview * ratio);
+      const h = ratio >= 1 ? Math.round(maxPreview / ratio) : maxPreview;
+      canvas.width = w; canvas.height = h;
+      const rendered = renderTileCanvas(w, h, true);
+      canvas.getContext('2d').drawImage(rendered, 0, 0);
+      updateAutoFitSummary();
+    }
+
+    function calcAutoFit(paperKey, photoW, photoH) {
+      const p = PAPERS[paperKey];
+      const margin = 3, gap = 1.5;
+      const fit = (pw, ph) => ({
+        cols: Math.max(1, Math.floor((pw - margin * 2 + gap) / (photoW + gap))),
+        rows: Math.max(1, Math.floor((ph - margin * 2 + gap) / (photoH + gap))),
+        pw, ph
+      });
+      const port = fit(p.w, p.h), land = fit(p.h, p.w);
+      const best = (land.cols * land.rows > port.cols * port.rows) ? land : port;
+      return { ...best, max: best.cols * best.rows };
+    }
+
+    function updateAutoFitSummary() {
+      const refW = state.queue[0]?.widthMm || state.widthMm;
+      const refH = state.queue[0]?.heightMm || state.heightMm;
+      const fit = calcAutoFit(state.paper, refW, refH);
+      document.getElementById('autofit-summary').textContent = `${fit.cols} cols × ${fit.rows} rows = ${fit.max} max/sheet`;
+      return fit;
+    }
+
+    function addCurrentToQueue() {
+      const pxW = mmToPx(state.widthMm);
+      const pxH = mmToPx(state.heightMm);
+      const tile = renderTileCanvas(pxW, pxH, false);
+      const fit = calcAutoFit(state.paper, state.widthMm, state.heightMm);
+      const copies = state.queue.length === 0 ? fit.max : 4;
+      state.queue.push({
+        id: Date.now() + Math.random(),
+        label: state.personName.trim() || `Customer ${state.queue.length + 1}`,
+        widthMm: state.widthMm,
+        heightMm: state.heightMm,
+        copies,
+        tile
+      });
+      renderQueueAndSheets();
+    }
+
+    function renderQueueAndSheets() {
+      const total = state.queue.reduce((acc, q) => acc + q.copies, 0);
+      document.getElementById('queue-count-badge').textContent = total;
+      updateAutoFitSummary();
+
+      const listEl = document.getElementById('queue-list');
+      listEl.innerHTML = '';
+      state.queue.forEach((item) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-3 p-2.5 rounded-xl bg-studioElevated border border-slate-700';
+        row.innerHTML = `
+          <img src="${item.tile.toDataURL('image/jpeg', 0.85)}" class="w-10 h-12 object-cover rounded border border-slate-600" />
+          <div class="flex-1 min-w-0">
+            <div class="text-xs font-semibold truncate">${item.label}</div>
+            <div class="text-[11px] font-mono text-sky-400">${item.widthMm}×${item.heightMm} mm</div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button class="dec-btn w-8 h-8 rounded-lg bg-studioCard border border-slate-700 text-sm">-</button>
+            <span class="w-6 text-center text-xs font-mono">${item.copies}</span>
+            <button class="inc-btn w-8 h-8 rounded-lg bg-studioCard border border-slate-700 text-sm text-sky-400">+</button>
+            <button class="del-btn w-8 h-8 rounded-lg text-rose-400 text-xs">✕</button>
+          </div>
+        `;
+        row.querySelector('.dec-btn').onclick = () => { if (item.copies > 1) { item.copies--; renderQueueAndSheets(); } };
+        row.querySelector('.inc-btn').onclick = () => { item.copies++; renderQueueAndSheets(); };
+        row.querySelector('.del-btn').onclick = () => { state.queue = state.queue.filter(q => q.id !== item.id); renderQueueAndSheets(); };
+        listEl.appendChild(row);
+      });
+
+      // Pack onto 300 DPI canvases
+      const previewEl = document.getElementById('sheet-preview-container');
+      const printArea = document.getElementById('print-area');
+      previewEl.innerHTML = ''; printArea.innerHTML = '';
+      state.sheetCanvases = [];
+      if (state.queue.length === 0) {
+        previewEl.innerHTML = '<p class="text-xs text-slate-500 py-8">Queue is empty. Add a photo to preview 300 DPI sheet.</p>';
+        return;
+      }
+
+      const fit = calcAutoFit(state.paper, state.queue[0].widthMm, state.queue[0].heightMm);
+      const margin = 3, gap = 1.5;
+      const pages = [];
+      let cur = [], cx = margin, cy = margin, rowMaxH = 0;
+
+      for (const item of state.queue) {
+        for (let i = 0; i < item.copies; i++) {
+          if (cx + item.widthMm > fit.pw - margin + 0.05) { cx = margin; cy += rowMaxH + gap; rowMaxH = 0; }
+          if (cy + item.heightMm > fit.ph - margin + 0.05) { pages.push(cur); cur = []; cx = margin; cy = margin; rowMaxH = 0; }
+          cur.push({ xMm: cx, yMm: cy, wMm: item.widthMm, hMm: item.heightMm, tile: item.tile });
+          cx += item.widthMm + gap; rowMaxH = Math.max(rowMaxH, item.heightMm);
+        }
+      }
+      if (cur.length) pages.push(cur);
+
+      pages.forEach((placements) => {
+        const sc = document.createElement('canvas');
+        sc.width = mmToPx(fit.pw); sc.height = mmToPx(fit.ph);
+        const sctx = sc.getContext('2d');
+        sctx.fillStyle = '#FFFFFF'; sctx.fillRect(0, 0, sc.width, sc.height);
+        for (const p of placements) {
+          const x = mmToPx(p.xMm), y = mmToPx(p.yMm), w = mmToPx(p.wMm), h = mmToPx(p.hMm);
+          sctx.drawImage(p.tile, x, y, w, h);
+          sctx.strokeStyle = '#CBD5E1'; sctx.lineWidth = 1; // 0.5px scaled cutting border
+          sctx.strokeRect(x, y, w, h);
+        }
+        state.sheetCanvases.push({ canvas: sc, pw: fit.pw, ph: fit.ph });
+
+        const imgPreview = document.createElement('img');
+        imgPreview.src = sc.toDataURL('image/jpeg', 0.85);
+        imgPreview.className = 'max-h-72 rounded border border-slate-700 shadow';
+        previewEl.appendChild(imgPreview);
+
+        const imgPrint = document.createElement('img');
+        imgPrint.src = sc.toDataURL('image/jpeg', 0.96);
+        imgPrint.className = 'print-page-img';
+        printArea.appendChild(imgPrint);
+      });
+    }
+
+    async function runAiBgRemoval(autoSwatch) {
+      if (!state.sourceImg) return;
+      const overlay = document.getElementById('ai-loading-overlay');
+      overlay.classList.remove('hidden');
+      try {
+        const { removeBackground } = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/+esm');
+        const c = document.createElement('canvas');
+        c.width = state.sourceImg.width; c.height = state.sourceImg.height;
+        c.getContext('2d').drawImage(state.sourceImg, 0, 0);
+        const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+        const resultBlob = await removeBackground(blob);
+        const url = URL.createObjectURL(resultBlob);
+        const outImg = new Image();
+        outImg.onload = () => {
+          state.cutoutImg = outImg;
+          if (autoSwatch) state.bgColor = autoSwatch;
+          else if (state.bgColor === 'original') state.bgColor = '#FFFFFF';
+          overlay.classList.add('hidden');
+          renderPreview();
+        };
+        outImg.src = url;
+      } catch (err) {
+        overlay.classList.add('hidden');
+        alert('Background removal error: ' + err.message);
+      }
+    }
+
+    // Event Bindings
+    document.getElementById('photo-upload').addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const img = new Image();
+      img.onload = () => { state.sourceImg = img; state.cutoutImg = null; state.bgColor = 'original'; renderPreview(); };
+      img.src = URL.createObjectURL(file);
+    });
+
+    const switchWorkspace = (tab) => {
+      const isEditor = tab === 'editor';
+      document.getElementById('view-editor').classList.toggle('hidden', !isEditor);
+      document.getElementById('view-sheet').classList.toggle('hidden', isEditor);
+      document.getElementById('footer-editor').classList.toggle('hidden', !isEditor);
+      document.getElementById('footer-sheet').classList.toggle('hidden', isEditor);
+      document.getElementById('tab-btn-editor').className = isEditor
+        ? 'py-2 rounded-xl text-xs font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/60 transition'
+        : 'py-2 rounded-xl text-xs font-semibold bg-studioElevated text-slate-400 border border-slate-700 transition';
+      document.getElementById('tab-btn-sheet').className = !isEditor
+        ? 'py-2 rounded-xl text-xs font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/60 transition'
+        : 'py-2 rounded-xl text-xs font-semibold bg-studioElevated text-slate-400 border border-slate-700 transition';
+    };
+    document.getElementById('tab-btn-editor').onclick = () => switchWorkspace('editor');
+    document.getElementById('tab-btn-sheet').onclick = () => switchWorkspace('sheet');
+
+    document.querySelectorAll('.tool-tab-btn').forEach((btn) => {
+      btn.onclick = () => {
+        document.querySelectorAll('.tool-tab-btn').forEach(b => b.className = 'tool-tab-btn px-3.5 py-2 rounded-xl text-xs font-semibold bg-studioCard border border-slate-700 text-slate-300 whitespace-nowrap');
+        btn.className = 'tool-tab-btn px-3.5 py-2 rounded-xl text-xs font-semibold bg-sky-500 text-white whitespace-nowrap';
+        document.querySelectorAll('.tool-panel').forEach(p => p.classList.add('hidden'));
+        document.getElementById('panel-' + btn.dataset.tool).classList.remove('hidden');
+      };
+    });
+
+    document.querySelectorAll('.preset-btn').forEach((btn) => {
+      btn.onclick = () => {
+        const [w, h] = btn.dataset.preset.split(',').map(Number);
+        state.widthMm = w; state.heightMm = h;
+        document.getElementById('input-width-mm').value = w;
+        document.getElementById('input-height-mm').value = h;
+        renderPreview();
+      };
+    });
+
+    document.getElementById('input-width-mm').oninput = (e) => { const v = parseFloat(e.target.value); if (v >= 10 && v <= 200) { state.widthMm = v; renderPreview(); } };
+    document.getElementById('input-height-mm').oninput = (e) => { const v = parseFloat(e.target.value); if (v >= 10 && v <= 280) { state.heightMm = v; renderPreview(); } };
+    document.getElementById('slider-zoom').oninput = (e) => { state.zoom = Number(e.target.value); document.getElementById('val-zoom').textContent = state.zoom + '%'; renderPreview(); };
+    document.getElementById('slider-panx').oninput = (e) => { state.panX = Number(e.target.value); document.getElementById('val-panx').textContent = state.panX + '%'; renderPreview(); };
+    document.getElementById('slider-pany').oninput = (e) => { state.panY = Number(e.target.value); document.getElementById('val-pany').textContent = state.panY + '%'; renderPreview(); };
+
+    document.getElementById('btn-toggle-guide').onclick = (e) => {
+      state.showGuide = !state.showGuide;
+      e.target.textContent = 'Guide: ' + (state.showGuide ? 'ON' : 'OFF');
+      renderPreview();
+    };
+    document.getElementById('btn-reset-frame').onclick = () => {
+      state.zoom = 100; state.panX = 0; state.panY = 0;
+      document.getElementById('slider-zoom').value = 100;
+      document.getElementById('slider-panx').value = 0;
+      document.getElementById('slider-pany').value = 0;
+      renderPreview();
+    };
+
+    document.getElementById('btn-remove-bg').onclick = () => runAiBgRemoval();
+    document.querySelectorAll('.swatch-btn').forEach((btn) => {
+      btn.onclick = () => {
+        const bg = btn.dataset.bg;
+        if (bg === 'original') { state.bgColor = 'original'; renderPreview(); }
+        else if (!state.cutoutImg) { runAiBgRemoval(bg); }
+        else { state.bgColor = bg; renderPreview(); }
+      };
+    });
+    document.getElementById('input-custom-bg').oninput = (e) => {
+      if (!state.cutoutImg) runAiBgRemoval(e.target.value);
+      else { state.bgColor = e.target.value; renderPreview(); }
+    };
+
+    document.getElementById('btn-auto-retouch').onclick = () => {
+      state.brightness = 108; state.contrast = 114; state.saturation = 108;
+      document.getElementById('slider-brightness').value = 108; document.getElementById('val-brightness').textContent = '108%';
+      document.getElementById('slider-contrast').value = 114; document.getElementById('val-contrast').textContent = '114%';
+      document.getElementById('slider-saturation').value = 108; document.getElementById('val-saturation').textContent = '108%';
+      renderPreview();
+    };
+    document.getElementById('btn-reset-retouch').onclick = () => {
+      state.brightness = 100; state.contrast = 100; state.saturation = 100;
+      document.getElementById('slider-brightness').value = 100; document.getElementById('val-brightness').textContent = '100%';
+      document.getElementById('slider-contrast').value = 100; document.getElementById('val-contrast').textContent = '100%';
+      document.getElementById('slider-saturation').value = 100; document.getElementById('val-saturation').textContent = '100%';
+      renderPreview();
+    };
+    document.getElementById('slider-brightness').oninput = (e) => { state.brightness = Number(e.target.value); document.getElementById('val-brightness').textContent = state.brightness + '%'; renderPreview(); };
+    document.getElementById('slider-contrast').oninput = (e) => { state.contrast = Number(e.target.value); document.getElementById('val-contrast').textContent = state.contrast + '%'; renderPreview(); };
+    document.getElementById('slider-saturation').oninput = (e) => { state.saturation = Number(e.target.value); document.getElementById('val-saturation').textContent = state.saturation + '%'; renderPreview(); };
+
+    document.getElementById('toggle-namestrip').onchange = (e) => { state.showNameStrip = e.target.checked; renderPreview(); };
+    document.getElementById('input-person-name').oninput = (e) => { state.personName = e.target.value; renderPreview(); };
+    document.getElementById('input-photo-date').oninput = (e) => { state.photoDate = e.target.value; renderPreview(); };
+    document.getElementById('btn-today-date').onclick = () => {
+      const d = new Date();
+      const str = `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
+      state.photoDate = str; state.showNameStrip = true;
+      document.getElementById('toggle-namestrip').checked = true;
+      document.getElementById('input-photo-date').value = str;
+      renderPreview();
+    };
+
+    document.querySelectorAll('.paper-btn').forEach((btn) => {
+      btn.onclick = () => {
+        state.paper = btn.dataset.paper;
+        document.querySelectorAll('.paper-btn').forEach(b => b.className = 'paper-btn p-3 rounded-xl border border-slate-700 bg-studioElevated text-left');
+        btn.className = 'paper-btn p-3 rounded-xl border border-sky-500 bg-sky-500/15 text-left';
+        renderQueueAndSheets();
+      };
+    });
+
+    document.getElementById('btn-add-queue').onclick = () => addCurrentToQueue();
+    document.getElementById('btn-add-to-queue-inline').onclick = () => addCurrentToQueue();
+    document.getElementById('btn-go-sheet').onclick = () => { if (state.queue.length === 0) addCurrentToQueue(); switchWorkspace('sheet'); };
+    document.getElementById('btn-clear-queue').onclick = () => { state.queue = []; renderQueueAndSheets(); };
+    document.getElementById('btn-autofill').onclick = () => {
+      if (state.queue.length === 0) addCurrentToQueue();
+      const fit = updateAutoFitSummary();
+      const per = Math.max(1, Math.floor(fit.max / state.queue.length));
+      state.queue.forEach((q, idx) => { q.copies = per + (idx < (fit.max % state.queue.length) ? 1 : 0); });
+      renderQueueAndSheets();
+    };
+
+    document.getElementById('btn-export-pdf').onclick = () => {
+      if (state.sheetCanvases.length === 0) return;
+      const { jsPDF } = window.jspdf;
+      const first = state.sheetCanvases[0];
+      const doc = new jsPDF({ orientation: first.pw > first.ph ? 'landscape' : 'portrait', unit: 'mm', format: [first.pw, first.ph] });
+      state.sheetCanvases.forEach((s, i) => {
+        if (i > 0) doc.addPage([s.pw, s.ph], s.pw > s.ph ? 'landscape' : 'portrait');
+        doc.addImage(s.canvas.toDataURL('image/jpeg', 0.96), 'JPEG', 0, 0, s.pw, s.ph);
+      });
+      doc.save(`EasyStudio_300DPI_${Date.now()}.pdf`);
+    };
+
+    document.getElementById('btn-export-jpg').onclick = () => {
+      state.sheetCanvases.forEach((s, i) => {
+        const a = document.createElement('a');
+        a.download = `EasyStudio_300DPI_p${i + 1}_${Date.now()}.jpg`;
+        a.href = s.canvas.toDataURL('image/jpeg', 0.96);
+        a.click();
+      });
+    };
+
+    document.getElementById('btn-print-now').onclick = () => window.print();
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+    createInitialPortrait();
+  </script>
+</body>
+</html>

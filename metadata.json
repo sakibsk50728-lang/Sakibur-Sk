@@ -1,0 +1,6 @@
+{
+  "name": "EasyStudio Pro",
+  "description": "Dark-themed studio ID & passport photo editor with on-device AI background removal, custom mm dimensions, studio retouching, and 300 DPI multi-customer A4/4x6 print layout export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

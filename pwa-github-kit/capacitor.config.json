@@ -1,0 +1,12 @@
+{
+  "appId": "com.easystudio.pro.app",
+  "appName": "EasyStudio Pro",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#121417"
+  }
+}
